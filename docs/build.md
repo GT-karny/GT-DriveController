@@ -90,16 +90,17 @@ cd build\Release
 **期待される出力**:
 ```
 [Test] Loading GT-DriveController.dll...
-[Test] Instantiating with Resource Path: file:///E:/.../build/Release/../resources
-[Test] Initialization mode entered successfully.
-[GT-DriveController] Python home: E:/.../build/Release/../resources/python
-[GT-DriveController] Importing logic module...
+[Test] Instantiating with Resource Path: file:///E:/.../resources
+[GT-DriveController] Using script: E:/.../resources\logic.py
+[GT-DriveController] Importing module: logic
 [GT-DriveController] Python controller initialized successfully
 [Test] Ready for simulation.
+[Test] Testing Size=0 case...
 [Test] doStep(Size=0) passed.
 [Test] Testing Size>0 case...
-[Test] doStep(Size>0) executed. Status: 0
-[Test] Outputs: T=0.5 B=0 S=0.01  # logic.pyのデフォルト値
+[Test] doStep(Size>0) executed.
+[Test] Outputs: T=0.5 B=0 S=0.01
+[Test] Outputs: OSI_Out_Ptr=1781d54cd98 OSI_Out_Size=14 DriveMode=1
 [Test] Done.
 ```
 

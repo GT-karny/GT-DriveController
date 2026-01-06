@@ -29,6 +29,12 @@ namespace py = pybind11;
 #define VR_BRAKE      4
 #define VR_STEERING   5
 #define VR_VALID      6
+#define VR_OSI_OUT_BASELO 7
+#define VR_OSI_OUT_BASEHI 8
+#define VR_OSI_OUT_SIZE   9
+#define VR_DRIVEMODE      10
+#define VR_PYTHON_SCRIPT_PATH  11
+#define VR_PYTHON_DEP_PATH     12
 
 class OSMPController {
 public:
@@ -41,7 +47,10 @@ public:
     
     // Setters / Getters
     fmi2Status setInteger(const fmi2ValueReference vr[], size_t nvr, const fmi2Integer value[]);
+    fmi2Status getInteger(const fmi2ValueReference vr[], size_t nvr, fmi2Integer value[]);
     fmi2Status getReal(const fmi2ValueReference vr[], size_t nvr, fmi2Real value[]);
+    fmi2Status setString(const fmi2ValueReference vr[], size_t nvr, const fmi2String value[]);
+    fmi2Status getString(const fmi2ValueReference vr[], size_t nvr, fmi2String value[]);
     
     // Other FMI stubs
     fmi2Status terminate();
@@ -64,12 +73,27 @@ private:
     fmi2Real m_steering = 0.0;
     fmi2Boolean m_valid = fmi2True;
 
+    // OSI Output
+    fmi2Integer m_osi_out_baseLo = 0;
+    fmi2Integer m_osi_out_baseHi = 0;
+    fmi2Integer m_osi_out_size = 0;
+    std::string m_osi_out_buffer[2]; // Double buffering for stability
+    int m_osi_out_idx = 0;
+
+    // Control Output
+    fmi2Integer m_driveMode = 1; // Default: Forward
+
+    // Parameters
+    std::string m_pythonScriptPath = "resources/logic.py";
+    std::string m_pythonDependencyPath = "";
+
     // Python Objects
     py::object m_pyController;
     bool m_pythonInitialized = false;
 
     // Helper functions
     void* decodePointer(fmi2Integer hi, fmi2Integer lo);
+    void encodePointer(const void* ptr, fmi2Integer& hi, fmi2Integer& lo);
     std::string decodeResourcePath(const std::string& uri);
     std::string urlDecode(const std::string& encoded);
 };

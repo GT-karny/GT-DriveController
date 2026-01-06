@@ -57,8 +57,12 @@ fmi2Component fmi2Instantiate(...);
 // 2. 初期化モードへの進入 (重量: Python初期化、モジュールロード)
 fmi2Status fmi2EnterInitializationMode(fmi2Component c);
 
-// 3. シミュレーションステップの実行 (GIL管理、ポインタ検証)
+// 3. シミュレーションステップの実行 (GIL管理、ポインタ検証、ダブルバッファリング)
 fmi2Status fmi2DoStep(fmi2Component c, ...);
+
+// 4. 定数・変数アクセス (OSI出力、パラメータ取得)
+fmi2Status fmi2GetInteger(fmi2Component c, ...);
+fmi2Status fmi2SetString(fmi2Component c, ...);
 ```
 
 **重要な設計決定**:
@@ -131,13 +135,28 @@ fmi2Status OSMPController::doStep(fmi2Real currentCommunicationPoint,
             // 5. Pythonコントローラーを呼び出し
             py::object result = m_pyController.attr("update_control")(data);
             
-            // 6. 結果をパース
+            // 6. 結果をパース [throttle, brake, steering, drive_mode, osi_out]
             if (py::isinstance<py::list>(result)) {
                 py::list resList = result.cast<py::list>();
-                if (resList.size() >= 3) {
+                size_t size = resList.size();
+                
+                if (size >= 3) {
                     m_throttle = resList[0].cast<float>();
                     m_brake = resList[1].cast<float>();
                     m_steering = resList[2].cast<float>();
+                }
+                if (size >= 4) {
+                    m_driveMode = resList[3].cast<int>();
+                }
+                if (size >= 5 && py::isinstance<py::bytes>(resList[4])) {
+                    // ダブルバッファリングによるメモリ安定性の確保
+                    int next_idx = 1 - m_osi_out_idx;
+                    m_osi_out_buffer[next_idx] = resList[4].cast<std::string>();
+                    m_osi_out_idx = next_idx;
+                    
+                    encodePointer(m_osi_out_buffer[m_osi_out_idx].data(), 
+                                  m_osi_out_baseHi, m_osi_out_baseLo);
+                    m_osi_out_size = (fmi2Integer)m_osi_out_buffer[m_osi_out_idx].size();
                 }
             }
         } catch (py::error_already_set& e) {
@@ -165,49 +184,44 @@ class Controller:
         """コントローラーの初期化"""
         pass
     
-    def update_control(self, osi_data: bytes) -> list[float]:
-        """
-        OSI SensorViewデータを処理し、制御出力を返す
-        
-        Args:
-            osi_data: シリアライズされたOSI SensorViewデータ
-        
-        Returns:
-            [throttle, brake, steering] のリスト
-            - throttle: 0.0 ~ 1.0 (アクセル開度)
-            - brake: 0.0 ~ 1.0 (ブレーキ圧)
-            - steering: -1.0 ~ 1.0 (ステアリング角度、左が負)
-        """
-        # OSIデータをパース（例: protobuf使用）
-        # from osi3.osi_sensorview_pb2 import SensorView
-        # sensor_view = SensorView()
-        # sensor_view.ParseFromString(osi_data)
-        
-        # コントローラーロジックを実装
-        throttle = 0.5
-        brake = 0.0
-        steering = 0.0
-        
-        return [throttle, brake, steering]
+        return [throttle, brake, steering, drive_mode, osi_output_bytes]
 ```
+
+### 4. パラメータ化されたパス設定
+`fmi2SetString` を介して、FMU外部から以下の設定が可能です。
+- `PythonScriptPath`: デフォルトは `resources/logic.py`。
+- `PythonDependencyPath`: `sys.path` に追加するパス。
+
+これらは `fmi2EnterInitializationMode` が呼ばれる前にセットすることで、初期化時に反映されます。
 
 ## FMI変数定義
 
-### 入力変数
+### 入力変数 (Integers)
 
-| 名前 | Value Reference | 型 | 説明 |
-|------|----------------|-----|------|
-| `OSI_SensorView_In.base.lo` | 0 | Integer | OSIポインタの下位32ビット |
-| `OSI_SensorView_In.base.hi` | 1 | Integer | OSIポインタの上位32ビット |
-| `OSI_SensorView_In.size` | 2 | Integer | OSIデータのサイズ（バイト） |
+| 名前 | Value Reference | 説明 |
+|------|----------------|------|
+| `OSI_SensorView_In_BaseLo` | 0 | OSIポインタの下位32ビット |
+| `OSI_SensorView_In_BaseHi` | 1 | OSIポインタの上位32ビット |
+| `OSI_SensorView_In_Size` | 2 | OSIデータのサイズ |
 
-### 出力変数
+### 出力変数 (Reals / Integers)
 
 | 名前 | Value Reference | 型 | 説明 |
 |------|----------------|-----|------|
 | `Throttle` | 3 | Real | スロットル開度 (0.0 ~ 1.0) |
 | `Brake` | 4 | Real | ブレーキ圧 (0.0 ~ 1.0) |
 | `Steering` | 5 | Real | ステアリング角度 (-1.0 ~ 1.0) |
+| `OSI_SensorView_Out_BaseLo` | 7 | Integer | 出力OSIポインタ(下位) |
+| `OSI_SensorView_Out_BaseHi` | 8 | Integer | 出力OSIポインタ(上位) |
+| `OSI_SensorView_Out_Size` | 9 | Integer | 出力OSIサイズ |
+| `DriveMode` | 10 | Integer | 走行モード (1, 0, -1) |
+
+### パラメータ (Strings)
+
+| 名前 | Value Reference | 説明 |
+|------|----------------|------|
+| `PythonScriptPath` | 11 | 実行スクリプトのパス |
+| `PythonDependencyPath` | 12 | 追加の `sys.path` |
 
 ## Python埋め込み環境
 

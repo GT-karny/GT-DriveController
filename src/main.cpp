@@ -107,8 +107,8 @@ FMI2_Export fmi2Status fmi2GetReal(fmi2Component c, const fmi2ValueReference vr[
 }
 
 FMI2_Export fmi2Status fmi2GetInteger(fmi2Component c, const fmi2ValueReference vr[], size_t nvr, fmi2Integer value[]) {
-    // Only inputs provided, we usually don't need to get them back, but for debugging:
-    return fmi2OK; 
+    if (c) return ((OSMPController*)c)->getInteger(vr, nvr, value);
+    return fmi2Error; 
 }
 
 FMI2_Export fmi2Status fmi2GetBoolean(fmi2Component c, const fmi2ValueReference vr[], size_t nvr, fmi2Boolean value[]) {
@@ -116,7 +116,8 @@ FMI2_Export fmi2Status fmi2GetBoolean(fmi2Component c, const fmi2ValueReference 
 }
 
 FMI2_Export fmi2Status fmi2GetString(fmi2Component c, const fmi2ValueReference vr[], size_t nvr, fmi2String value[]) {
-    return fmi2OK;
+    if (c) return ((OSMPController*)c)->getString(vr, nvr, const_cast<fmi2String*>(value));
+    return fmi2Error;
 }
 
 FMI2_Export fmi2Status fmi2SetReal(fmi2Component c, const fmi2ValueReference vr[], size_t nvr, const fmi2Real value[]) {
@@ -134,7 +135,8 @@ FMI2_Export fmi2Status fmi2SetBoolean(fmi2Component c, const fmi2ValueReference 
 }
 
 FMI2_Export fmi2Status fmi2SetString(fmi2Component c, const fmi2ValueReference vr[], size_t nvr, const fmi2String value[]) {
-    return fmi2OK;
+    if (c) return ((OSMPController*)c)->setString(vr, nvr, value);
+    return fmi2Error;
 }
 
 // ... Other unsupported functions stubbed ...

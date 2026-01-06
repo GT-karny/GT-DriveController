@@ -55,19 +55,38 @@ fmi2Status OSMPController::doInit() {
         fs::path pythonHome = resDir / "python";
         
         std::cout << "[GT-DriveController] Resource path: " << m_resourcePath << std::endl;
-        std::cout << "[GT-DriveController] Python home: " << pythonHome.string() << std::endl;
         
         // Ensure Interpreter is running
         GlobalInitializePython(pythonHome.wstring());
 
-        // Add 'resources' to sys.path to find logic.py
-        // User confirmed layout: resources/logic.py (not resources/python/logic.py)
         py::module sys = py::module::import("sys");
-        sys.attr("path").attr("append")(resDir.string());
-        
-        std::cout << "[GT-DriveController] Importing logic module..." << std::endl;
-        // Import logic module
-        py::module logic = py::module::import("logic");
+
+        // 1. Handle PythonDependencyPath
+        if (!m_pythonDependencyPath.empty()) {
+            std::cout << "[GT-DriveController] Adding dependency path: " << m_pythonDependencyPath << std::endl;
+            sys.attr("path").attr("append")(m_pythonDependencyPath);
+        }
+
+        // 2. Handle PythonScriptPath
+        fs::path scriptPath(m_pythonScriptPath);
+        if (scriptPath.is_relative()) {
+            scriptPath = resDir / scriptPath;
+        }
+
+        std::cout << "[GT-DriveController] Using script: " << scriptPath.string() << std::endl;
+
+        if (!fs::exists(scriptPath)) {
+            std::cerr << "[GT-DriveController] Error: Script not found: " << scriptPath.string() << std::endl;
+            return fmi2Error;
+        }
+
+        // Add script's directory to sys.path (High priority)
+        sys.attr("path").attr("insert")(0, scriptPath.parent_path().string());
+
+        // Import module (filename without .py)
+        std::string moduleName = scriptPath.stem().string();
+        std::cout << "[GT-DriveController] Importing module: " << moduleName << std::endl;
+        py::module logic = py::module::import(moduleName.c_str());
         
         // Instantiate Controller
         m_pyController = logic.attr("Controller")();
@@ -78,9 +97,7 @@ fmi2Status OSMPController::doInit() {
         return fmi2OK;
     }
     catch (py::error_already_set& e) {
-        // Enhanced Python error reporting with traceback
         std::cerr << "[GT-DriveController] Python error in doInit: " << e.what() << std::endl;
-        // pybind11 automatically includes traceback in what()
         return fmi2Error;
     }
     catch (std::exception& e) {
@@ -90,7 +107,7 @@ fmi2Status OSMPController::doInit() {
 }
 
 fmi2Status OSMPController::doStep(fmi2Real currentCommunicationPoint, fmi2Real communicationStepSize) {
-    // Fallback: Initialize if not done yet (defensive programming)
+    // Fallback: Initialize if not done yet
     if (!m_pythonInitialized) {
         std::cerr << "[GT-DriveController] Warning: doStep called before initialization, initializing now" << std::endl;
         if (doInit() != fmi2OK) {
@@ -137,13 +154,33 @@ fmi2Status OSMPController::doStep(fmi2Real currentCommunicationPoint, fmi2Real c
             // 5. Call Python Update
             py::object result = m_pyController.attr("update_control")(data);
             
-            // 6. Parse Result [throttle, brake, steering]
+            // 6. Parse Result [throttle, brake, steering, drive_mode, osi_bytes]
             if (py::isinstance<py::list>(result)) {
                 py::list resList = result.cast<py::list>();
-                if (resList.size() >= 3) {
+                size_t size = resList.size();
+                
+                if (size >= 3) {
                     m_throttle = resList[0].cast<float>();
                     m_brake = resList[1].cast<float>();
                     m_steering = resList[2].cast<float>();
+                }
+                
+                if (size >= 4) {
+                    m_driveMode = resList[3].cast<int>();
+                }
+
+                if (size >= 5 && py::isinstance<py::bytes>(resList[4])) {
+                    // Double buffering: write to the other buffer
+                    int next_idx = 1 - m_osi_out_idx;
+                    m_osi_out_buffer[next_idx] = resList[4].cast<std::string>();
+                    m_osi_out_idx = next_idx;
+                    
+                    encodePointer(m_osi_out_buffer[m_osi_out_idx].data(), m_osi_out_baseHi, m_osi_out_baseLo);
+                    m_osi_out_size = (fmi2Integer)m_osi_out_buffer[m_osi_out_idx].size();
+                } else {
+                    m_osi_out_baseHi = 0;
+                    m_osi_out_baseLo = 0;
+                    m_osi_out_size = 0;
                 }
             }
         }
@@ -172,6 +209,19 @@ fmi2Status OSMPController::setInteger(const fmi2ValueReference vr[], size_t nvr,
     return fmi2OK;
 }
 
+fmi2Status OSMPController::getInteger(const fmi2ValueReference vr[], size_t nvr, fmi2Integer value[]) {
+    for (size_t i = 0; i < nvr; ++i) {
+        switch (vr[i]) {
+            case VR_OSI_OUT_BASELO: value[i] = m_osi_out_baseLo; break;
+            case VR_OSI_OUT_BASEHI: value[i] = m_osi_out_baseHi; break;
+            case VR_OSI_OUT_SIZE:   value[i] = m_osi_out_size; break;
+            case VR_DRIVEMODE:      value[i] = m_driveMode; break;
+            default:                value[i] = 0; break;
+        }
+    }
+    return fmi2OK;
+}
+
 fmi2Status OSMPController::getReal(const fmi2ValueReference vr[], size_t nvr, fmi2Real value[]) {
     for (size_t i = 0; i < nvr; ++i) {
         switch (vr[i]) {
@@ -179,6 +229,28 @@ fmi2Status OSMPController::getReal(const fmi2ValueReference vr[], size_t nvr, fm
             case VR_BRAKE:    value[i] = m_brake; break;
             case VR_STEERING: value[i] = m_steering; break;
             default:          value[i] = 0.0; break;
+        }
+    }
+    return fmi2OK;
+}
+
+fmi2Status OSMPController::setString(const fmi2ValueReference vr[], size_t nvr, const fmi2String value[]) {
+    for (size_t i = 0; i < nvr; ++i) {
+        switch (vr[i]) {
+            case VR_PYTHON_SCRIPT_PATH: m_pythonScriptPath = value[i]; break;
+            case VR_PYTHON_DEP_PATH:    m_pythonDependencyPath = value[i]; break;
+            default: break;
+        }
+    }
+    return fmi2OK;
+}
+
+fmi2Status OSMPController::getString(const fmi2ValueReference vr[], size_t nvr, fmi2String value[]) {
+    for (size_t i = 0; i < nvr; ++i) {
+        switch (vr[i]) {
+            case VR_PYTHON_SCRIPT_PATH: value[i] = m_pythonScriptPath.c_str(); break;
+            case VR_PYTHON_DEP_PATH:    value[i] = m_pythonDependencyPath.c_str(); break;
+            default:                    value[i] = ""; break;
         }
     }
     return fmi2OK;
@@ -201,6 +273,17 @@ void* OSMPController::decodePointer(fmi2Integer hi, fmi2Integer lo) {
     } else {
         // cast to uintptr_t first to avoid warning
         return reinterpret_cast<void*>((uintptr_t)lo);
+    }
+}
+
+void OSMPController::encodePointer(const void* ptr, fmi2Integer& hi, fmi2Integer& lo) {
+    uintptr_t address = reinterpret_cast<uintptr_t>(ptr);
+    if constexpr (sizeof(void*) == 8) {
+        hi = (fmi2Integer)((address >> 32) & 0xFFFFFFFF);
+        lo = (fmi2Integer)(address & 0xFFFFFFFF);
+    } else {
+        hi = 0;
+        lo = (fmi2Integer)address;
     }
 }
 

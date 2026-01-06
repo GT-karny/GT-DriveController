@@ -1,0 +1,19 @@
+[Test] Loading GT-DriveController.dll...
+[Test] Instantiating with Resource Path: file:///E:/Repository/GT-karny/GT-DriveController/resources
+[Test] Instantiation successful.
+[Test] Setting Python paths...
+[Test] Entering initialization mode...
+[GT-DriveController] Resource path: E:/Repository/GT-karny/GT-DriveController/resources
+[GT-DriveController] Using script: E:/Repository/GT-karny/GT-DriveController/resources\logic.py
+[GT-DriveController] Importing module: logic
+[GT-DriveController] Python controller initialized successfully
+[Test] Ready for simulation.
+[Test] Testing Size=0 case...
+[Test] doStep(Size=0) passed.
+[Test] Testing Size>0 case...
+[Test] doStep(Size>0) executed.
+[Test] Outputs: T=0.5 B=0 S=0.01
+[Test] Outputs: OSI_Out_Ptr=23170a816a8 OSI_Out_Size=14 DriveMode=1
+[Test] Done.
+[GT-DriveController] Error: Could not import osi3.osi_sensorview_pb2
+[GT-DriveController] Initialized Python Controller

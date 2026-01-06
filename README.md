@@ -16,9 +16,10 @@ esminiからのOSIデータ（SensorView）をバイナリポインタ経由で�
 
 ## 2. 特徴
 
-* **ポータブル:** **Python Embeddable Package** を `resources` フォルダに内包。実行環境にPythonがインストールされていなくても動作します。
-* **柔軟な開発:** 制御アルゴリズムは `resources/logic.py` を書き換えるだけで即座に変更可能。C++の再ビルドは不要です。
-* **OSIネイティブ:** C++側でOSIポインタをシリアライズし、Python側にはバイナリとして渡します。Python側では標準的な `osi3` ライブラリを用いて直感的にデータを扱えます。
+* **双方向OSI通信:** 入力だけでなく、Pythonからの計算結果をOSIバイナリとしてFMU外部へ出力可能。
+* **柔軟な開発:** 制御アルゴリズムは `logic.py` を書き換えるだけで即座に変更可能。`PythonScriptPath` パラメータでスクリプトファイルの場所も自由に変更できます。再ビルドは不要です。
+* **メモリ安全性:** ダブルバッファリングにより、出力されるOSIポインタのメモリ安定性を保証。
+* **OSIネイティブ:** Python側にはバイナリとしてデータを渡し、標準的な `osi3` ライブラリ（Google Protobuf）を用いて直感的にデータを扱えます。
 
 ---
 
@@ -104,8 +105,8 @@ def update_control(self, raw_bytes):
     # 周辺車両や自車位置に基づいた計算
     # ... 
     
-    # [accel, brake, steer] を返す
-    return [0.2, 0.0, -0.05]
+    # [accel, brake, steer, drive_mode, osi_output_bytes] を返す
+    return [0.2, 0.0, -0.05, 1, raw_bytes]
 
 ```
 
