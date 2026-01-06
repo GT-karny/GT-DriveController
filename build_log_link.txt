@@ -1,0 +1,9 @@
+MSBuild 縺ｮ繝舌・繧ｸ繝ｧ繝ｳ 17.14.23+b0019275e (.NET Framework)
+
+main.obj : error LNK2019: 譛ｪ隗｣豎ｺ縺ｮ螟夜Κ繧ｷ繝ｳ繝懊Ν __imp_PyObject_VisitManagedDict 縺碁未謨ｰ pybind11_traverse 縺ｧ蜿ら・縺輔ｌ縺ｾ縺励◆ [E:\Repository\GT-karny\GT-DriveController\build\GT-DriveController.vcxproj]
+OSMPController.obj : error LNK2001: 螟夜Κ繧ｷ繝ｳ繝懊Ν __imp_PyObject_VisitManagedDict 縺ｯ譛ｪ隗｣豎ｺ縺ｧ縺・[E:\Repository\GT-karny\GT-DriveController\build\GT-DriveController.vcxproj]
+main.obj : error LNK2019: 譛ｪ隗｣豎ｺ縺ｮ螟夜Κ繧ｷ繝ｳ繝懊Ν __imp_PyObject_ClearManagedDict 縺碁未謨ｰ pybind11_clear 縺ｧ蜿ら・縺輔ｌ縺ｾ縺励◆ [E:\Repository\GT-karny\GT-DriveController\build\GT-DriveController.vcxproj]
+OSMPController.obj : error LNK2001: 螟夜Κ繧ｷ繝ｳ繝懊Ν __imp_PyObject_ClearManagedDict 縺ｯ譛ｪ隗｣豎ｺ縺ｧ縺・[E:\Repository\GT-karny\GT-DriveController\build\GT-DriveController.vcxproj]
+main.obj : error LNK2019: 譛ｪ隗｣豎ｺ縺ｮ螟夜Κ繧ｷ繝ｳ繝懊Ν __imp_PyThreadState_GetUnchecked 縺碁未謨ｰ "public: __cdecl pybind11::gil_scoped_acquire::gil_scoped_acquire(void)" (??0gil_scoped_acquire@pybind11@@QEAA@XZ) 縺ｧ蜿ら・縺輔ｌ縺ｾ縺励◆ [E:\Repository\GT-karny\GT-DriveController\build\GT-DriveController.vcxproj]
+OSMPController.obj : error LNK2001: 螟夜Κ繧ｷ繝ｳ繝懊Ν __imp_PyThreadState_GetUnchecked 縺ｯ譛ｪ隗｣豎ｺ縺ｧ縺・[E:\Repository\GT-karny\GT-DriveController\build\GT-DriveController.vcxproj]
+E:\Repository\GT-karny\GT-DriveController\build\Release\GT-DriveController.dll : fatal error LNK1120: 3 莉ｶ縺ｮ譛ｪ隗｣豎ｺ縺ｮ螟夜Κ蜿ら・ [E:\Repository\GT-karny\GT-DriveController\build\GT-DriveController.vcxproj]

@@ -12,6 +12,12 @@
 #include "fmi2Functions.h"
 
 // Pybind11 Headers
+// WORKAROUND: Force Pybind11 to use Python 3.12 API (avoid missing 3.14 symbols in linker)
+// Python.h must be included first to define the original version
+#include <Python.h>
+#undef PY_VERSION_HEX
+#define PY_VERSION_HEX 0x030C0000 
+static_assert(PY_VERSION_HEX == 0x030C0000, "PY_VERSION_HEX spoof failed!"); 
 #include <pybind11/embed.h>
 namespace py = pybind11;
 
@@ -41,7 +47,7 @@ public:
     fmi2Status terminate();
     fmi2Status reset();
 
-    static void GlobalInitializePython();
+    static void GlobalInitializePython(const std::wstring& pythonHome);
     static void GlobalFinalizePython();
 
 private:

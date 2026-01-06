@@ -133,11 +133,12 @@ fmi2Status OSMPController::reset() {
 // --- Helpers ---
 
 void* OSMPController::decodePointer(fmi2Integer hi, fmi2Integer lo) {
-    if (sizeof(void*) == 8) {
+    if constexpr (sizeof(void*) == 8) {
         unsigned long long address = ((unsigned long long)hi << 32) | (unsigned int)lo;
         return reinterpret_cast<void*>(address);
     } else {
-        return reinterpret_cast<void*>(lo);
+        // cast to uintptr_t first to avoid warning
+        return reinterpret_cast<void*>((uintptr_t)lo);
     }
 }
 

@@ -1,5 +1,29 @@
-# Prerequisites
-*.d
+# CMake build directory
+build/
+cmake-build-*/
+out/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+!GT-DriveControllerConfig.cmake
+!GT-DriveControllerConfigVersion.cmake
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.suo
+*.opendb
+*.pdb
+*.idb
+*.ipch
 
 # Compiled Object files
 *.slo
@@ -10,12 +34,6 @@
 # Precompiled Headers
 *.gch
 *.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
 
 # Compiled Dynamic libraries
 *.so
@@ -37,5 +55,31 @@
 *.out
 *.app
 
-# debug information files
-*.dwo
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.env
+.venv
+env/
+venv/
+
+# Logs
+*.log
+build_log.txt
+
+# Temp files
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+
+# FMU artifacts
+*.fmu
+
+# Archives
+*.zip
+*.tar.gz
+*.7z
