@@ -1,3 +1,7 @@
 [submodule "thirdparty/pybind11"]
 	path = thirdparty/pybind11
 	url = https://github.com/pybind/pybind11.git
+[submodule "thirdparty/cpython"]
+	path = thirdparty/cpython
+	url = https://github.com/python/cpython.git
+	branch = 3.12
