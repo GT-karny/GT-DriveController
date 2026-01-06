@@ -104,6 +104,24 @@ cd build\Release
 [Test] Done.
 ```
 
+### 6. FMUパッケージの作成
+
+テスト成功後、配布可能な`.fmu`ファイルを作成します。
+
+```powershell
+cd e:\Repository\GT-karny\GT-DriveController
+.\create_fmu.ps1
+```
+
+**出力先**: `build/GT-DriveController.fmu` (約15.4 MB)
+
+このスクリプトは以下を実行します:
+1. FMI 2.0準拠のディレクトリ構造を作成
+2. `modelDescription.xml`をコピー
+3. `binaries/win64/`にDLLとPythonランタイムをコピー
+4. `resources/`にPythonコントローラーをコピー
+5. すべてを`.fmu`（ZIPアーカイブ）にパッケージ化
+
 ## プロジェクト構造
 
 ```
