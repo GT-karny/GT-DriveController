@@ -51,45 +51,20 @@ FMI 2.0標準に準拠したエントリーポイントを提供します。
 **主要な関数**:
 
 ```cpp
-// FMUのインスタンス化
-fmi2Component fmi2Instantiate(
-    fmi2String instanceName,
-    fmi2Type fmuType,
-    fmi2String fmuGUID,
-    fmi2String fmuResourceLocation,
-    const fmi2CallbackFunctions* functions,
-    fmi2Boolean visible,
-    fmi2Boolean loggingOn
-);
+// 1. FMUのインスタンス化 (軽量: オブジェクト生成のみ)
+fmi2Component fmi2Instantiate(...);
 
-// シミュレーションステップの実行
-fmi2Status fmi2DoStep(
-    fmi2Component c,
-    fmi2Real currentCommunicationPoint,
-    fmi2Real communicationStepSize,
-    fmi2Boolean noSetFMUStatePriorToCurrentPoint
-);
+// 2. 初期化モードへの進入 (重量: Python初期化、モジュールロード)
+fmi2Status fmi2EnterInitializationMode(fmi2Component c);
 
-// 入力変数の設定（OSIポインタ）
-fmi2Status fmi2SetInteger(
-    fmi2Component c,
-    const fmi2ValueReference vr[],
-    size_t nvr,
-    const fmi2Integer value[]
-);
-
-// 出力変数の取得（制御値）
-fmi2Status fmi2GetReal(
-    fmi2Component c,
-    const fmi2ValueReference vr[],
-    size_t nvr,
-    fmi2Real value[]
-);
+// 3. シミュレーションステップの実行 (GIL管理、ポインタ検証)
+fmi2Status fmi2DoStep(fmi2Component c, ...);
 ```
 
 **重要な設計決定**:
 - `FMI2_FUNCTION_PREFIX`を定義しない（DLLエクスポートのため）
 - `OSMPController`インスタンスを`fmi2Component`として返す
+- 重い初期化処理（Pythonインタープリタの起動など）は`fmi2EnterInitializationMode`で行う
 
 ### 2. OSMPController (`src/OSMPController.cpp`)
 
@@ -136,13 +111,27 @@ fmi2Status OSMPController::doStep(fmi2Real currentCommunicationPoint,
             // 1. ポインタをデコード
             void* rawPtr = decodePointer(m_osi_baseHi, m_osi_baseLo);
             
-            // 2. Pythonバイトオブジェクトを作成
-            py::bytes data(reinterpret_cast<const char*>(rawPtr), m_osi_size);
+            // 2. ポインタとサイズのバリデーション (メモリ安全性)
+            if (!rawPtr || m_osi_size > MAX_OSI_SIZE) {
+                return fmi2Warning;
+            }
+
+            // 3. Python GILの取得 (スレッド安全性)
+            py::gil_scoped_acquire acquire;
+
+            // 4. Pythonバイトオブジェクトを作成
+            // ポインタが無効な場合のセグフォを防ぐためtry-catchで保護
+            py::bytes data;
+            try {
+                data = py::bytes(reinterpret_cast<const char*>(rawPtr), m_osi_size);
+            } catch (...) {
+                return fmi2Warning;
+            }
             
-            // 3. Pythonコントローラーを呼び出し
+            // 5. Pythonコントローラーを呼び出し
             py::object result = m_pyController.attr("update_control")(data);
             
-            // 4. 結果をパース
+            // 6. 結果をパース
             if (py::isinstance<py::list>(result)) {
                 py::list resList = result.cast<py::list>();
                 if (resList.size() >= 3) {
@@ -151,6 +140,10 @@ fmi2Status OSMPController::doStep(fmi2Real currentCommunicationPoint,
                     m_steering = resList[2].cast<float>();
                 }
             }
+        } catch (py::error_already_set& e) {
+            // Pythonトレースバックを含むエラー出力
+            std::cerr << "[GT-DriveController] Python Error: " << e.what() << std::endl;
+            return fmi2Warning;
         } catch (std::exception& e) {
             std::cerr << "[GT-DriveController] Error: " << e.what() << std::endl;
             return fmi2Warning;

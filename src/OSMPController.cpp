@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
 
 namespace fs = std::filesystem;
 
@@ -32,40 +33,55 @@ OSMPController::OSMPController(fmi2String instanceName, fmi2String fmuResourceLo
 }
 
 OSMPController::~OSMPController() {
-    m_pyController.release(); // Release reference
+    // Properly release Python object by assigning None
+    // (release() would leak by not decrementing refcount)
+    if (m_pythonInitialized) {
+        // Acquire GIL before touching Python objects
+        py::gil_scoped_acquire acquire;
+        m_pyController = py::none();
+    }
 }
 
 fmi2Status OSMPController::doInit() {
+    // Prevent double-initialization
+    if (m_pythonInitialized) {
+        std::cout << "[GT-DriveController] Already initialized, skipping" << std::endl;
+        return fmi2OK;
+    }
+
     try {
-        // Construct absolute path to resources/python
+        // Construct absolute path to resources
         fs::path resDir(m_resourcePath);
         fs::path pythonHome = resDir / "python";
         
         std::cout << "[GT-DriveController] Resource path: " << m_resourcePath << std::endl;
         std::cout << "[GT-DriveController] Python home: " << pythonHome.string() << std::endl;
         
-        // Ensure Interpreter is running (Pass Home Path)
+        // Ensure Interpreter is running
         GlobalInitializePython(pythonHome.wstring());
 
-        // 2. Add 'resources/python' to sys.path to find logic.py
-        // We assume 'logic.py' is placed in 'resources' directory by build/packaging
-        // or 'resources/python' if mapped there.
-        // Let's add 'resources' root.
-        
+        // Add 'resources' to sys.path to find logic.py
+        // User confirmed layout: resources/logic.py (not resources/python/logic.py)
         py::module sys = py::module::import("sys");
-        // Add resource path to sys.path to find 'logic.py'
         sys.attr("path").attr("append")(resDir.string());
         
         std::cout << "[GT-DriveController] Importing logic module..." << std::endl;
-        // 3. Import logic module
+        // Import logic module
         py::module logic = py::module::import("logic");
         
-        // 4. Instantiate Controller
+        // Instantiate Controller
         m_pyController = logic.attr("Controller")();
         
+        m_pythonInitialized = true;
         std::cout << "[GT-DriveController] Python controller initialized successfully" << std::endl;
 
         return fmi2OK;
+    }
+    catch (py::error_already_set& e) {
+        // Enhanced Python error reporting with traceback
+        std::cerr << "[GT-DriveController] Python error in doInit: " << e.what() << std::endl;
+        // pybind11 automatically includes traceback in what()
+        return fmi2Error;
     }
     catch (std::exception& e) {
         std::cerr << "[GT-DriveController] Error in doInit: " << e.what() << std::endl;
@@ -74,20 +90,54 @@ fmi2Status OSMPController::doInit() {
 }
 
 fmi2Status OSMPController::doStep(fmi2Real currentCommunicationPoint, fmi2Real communicationStepSize) {
+    // Fallback: Initialize if not done yet (defensive programming)
+    if (!m_pythonInitialized) {
+        std::cerr << "[GT-DriveController] Warning: doStep called before initialization, initializing now" << std::endl;
+        if (doInit() != fmi2OK) {
+            return fmi2Error;
+        }
+    }
+
     if (m_osi_size > 0 && m_osi_baseLo != 0) {
         try {
             // 1. Decode Pointer
             void* rawPtr = decodePointer(m_osi_baseHi, m_osi_baseLo);
             
-            // 2. Read Bytes
-            // Create a python bytes object from raw memory (copy)
-            // Note: If size is huge, this copy is expensive. But for SensorView it's necessary for Python.
-            py::bytes data(reinterpret_cast<const char*>(rawPtr), m_osi_size);
+            // 2. Validate Pointer (Risk #3: OSI buffer safety)
+            if (!rawPtr) {
+                std::cerr << "[GT-DriveController] Warning: Invalid OSI pointer (null), using default values" << std::endl;
+                return fmi2Warning;
+            }
             
-            // 3. Call Python Update
+            // Validate size is reasonable (< 100MB)
+            const size_t MAX_OSI_SIZE = 100 * 1024 * 1024;
+            if (m_osi_size > MAX_OSI_SIZE) {
+                std::cerr << "[GT-DriveController] Warning: OSI size too large (" << m_osi_size 
+                          << " bytes), using default values" << std::endl;
+                return fmi2Warning;
+            }
+            
+            // 3. Acquire GIL for Python calls (Risk #2: thread safety)
+            // Note: For single-threaded host, this is defensive programming
+            py::gil_scoped_acquire acquire;
+            
+            // 4. Read Bytes
+            // Create a python bytes object from raw memory (copy)
+            // Note: This can throw if the pointer is invalid
+            py::bytes data;
+            try {
+                data = py::bytes(reinterpret_cast<const char*>(rawPtr), m_osi_size);
+            }
+            catch (...) {
+                // Catch all exceptions including access violations
+                std::cerr << "[GT-DriveController] Warning: Failed to read OSI data (invalid pointer or size), using default values" << std::endl;
+                return fmi2Warning;
+            }
+            
+            // 5. Call Python Update
             py::object result = m_pyController.attr("update_control")(data);
             
-            // 4. Parse Result [throttle, brake, steering]
+            // 6. Parse Result [throttle, brake, steering]
             if (py::isinstance<py::list>(result)) {
                 py::list resList = result.cast<py::list>();
                 if (resList.size() >= 3) {
@@ -96,6 +146,11 @@ fmi2Status OSMPController::doStep(fmi2Real currentCommunicationPoint, fmi2Real c
                     m_steering = resList[2].cast<float>();
                 }
             }
+        }
+        catch (py::error_already_set& e) {
+            // Enhanced Python error reporting (Risk #7)
+            std::cerr << "[GT-DriveController] Python error in doStep: " << e.what() << std::endl;
+            return fmi2Warning;
         }
         catch (std::exception& e) {
             std::cerr << "[GT-DriveController] Error in doStep: " << e.what() << std::endl;
@@ -151,10 +206,41 @@ void* OSMPController::decodePointer(fmi2Integer hi, fmi2Integer lo) {
 
 std::string OSMPController::decodeResourcePath(const std::string& uri) {
     std::string path = uri;
+    
+    // Remove file:// prefix
     if (path.find("file:///") == 0) {
         path = path.substr(8);
     } else if (path.find("file://") == 0) {
         path = path.substr(7);
     }
+    
+    // Decode percent-encoding (Risk #4: URI decoding)
+    // Example: "My%20FMU" -> "My FMU"
+    path = urlDecode(path);
+    
     return path;
+}
+
+std::string OSMPController::urlDecode(const std::string& encoded) {
+    std::string decoded;
+    decoded.reserve(encoded.size());
+    
+    for (size_t i = 0; i < encoded.size(); ++i) {
+        if (encoded[i] == '%' && i + 2 < encoded.size()) {
+            // Convert %XX to character
+            int value;
+            std::istringstream is(encoded.substr(i + 1, 2));
+            if (is >> std::hex >> value) {
+                decoded += static_cast<char>(value);
+                i += 2;
+            } else {
+                // Invalid encoding, keep as-is
+                decoded += encoded[i];
+            }
+        } else {
+            decoded += encoded[i];
+        }
+    }
+    
+    return decoded;
 }

@@ -37,16 +37,9 @@ FMI2_Export fmi2Component fmi2Instantiate(fmi2String instanceName,
     }
 
     // Create Controller Instance
+    // Note: Per FMI 2.0 spec, fmi2Instantiate should be lightweight (object creation only).
+    // Heavy initialization (Python, file I/O) is deferred to EnterInitializationMode.
     OSMPController* controller = new OSMPController(instanceName, fmuResourceLocation);
-    
-    // Perform Initialization (Loading Python, etc.)
-    // Note: fmi2Instantiate is strictly for creation. 
-    // Heavy init (like Python) can be done here or in EnterInitializationMode/Init.
-    // OSMPController::doInit does Python loading.
-    if (controller->doInit() != fmi2OK) {
-        delete controller;
-        return NULL;
-    }
 
     return (fmi2Component)controller;
 }
@@ -68,7 +61,12 @@ FMI2_Export fmi2Status fmi2SetupExperiment(fmi2Component c,
 }
 
 FMI2_Export fmi2Status fmi2EnterInitializationMode(fmi2Component c) {
-    return fmi2OK;
+    // Per FMI 2.0 spec, this is the proper place for heavy initialization
+    // (Python interpreter, module loading, resource allocation)
+    if (c) {
+        return ((OSMPController*)c)->doInit();
+    }
+    return fmi2Error;
 }
 
 FMI2_Export fmi2Status fmi2ExitInitializationMode(fmi2Component c) {

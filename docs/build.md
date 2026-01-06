@@ -90,17 +90,16 @@ cd build\Release
 **期待される出力**:
 ```
 [Test] Loading GT-DriveController.dll...
-[GT-DriveController] Resource path: E:/Repository/GT-karny/GT-DriveController/build/Release/../resources
-[GT-DriveController] Python home: E:/Repository/GT-karny/GT-DriveController/build/Release/../resources/python
+[Test] Instantiating with Resource Path: file:///E:/.../build/Release/../resources
+[Test] Initialization mode entered successfully.
+[GT-DriveController] Python home: E:/.../build/Release/../resources/python
 [GT-DriveController] Importing logic module...
-[Python] Controller initialized
 [GT-DriveController] Python controller initialized successfully
-[Test] Instantiation successful.
-[Test] Testing Size=0 case...
+[Test] Ready for simulation.
 [Test] doStep(Size=0) passed.
 [Test] Testing Size>0 case...
 [Test] doStep(Size>0) executed. Status: 0
-[Test] Outputs: T=0 B=0 S=0
+[Test] Outputs: T=0.5 B=0 S=0.01  # logic.pyのデフォルト値
 [Test] Done.
 ```
 

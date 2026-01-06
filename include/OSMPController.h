@@ -71,6 +71,7 @@ private:
     // Helper functions
     void* decodePointer(fmi2Integer hi, fmi2Integer lo);
     std::string decodeResourcePath(const std::string& uri);
+    std::string urlDecode(const std::string& encoded);
 };
 
 #endif // OSMP_CONTROLLER_H

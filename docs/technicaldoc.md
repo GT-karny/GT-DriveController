@@ -8,10 +8,10 @@ esmini（またはOSI出力を持つシミュレータ）から渡される `Sen
 
 ### データ変換プロセス
 
-1. **C++受信**: esminiから提供されたバイナリポインタとサイズを基に、C++側で `osi3::SensorView` オブジェクトをパースします（`ParseFromArray`）。
-2. **シリアライズ**: C++オブジェクトを一度標準的なバイナリ形式（`std::string`）にシリアライズします（`SerializeToString`）。
-3. **Pythonへ転送**: `pybind11` の `py::bytes` 型を用いて、メモリコピーを伴うバイナリデータとしてPythonのメソッドに引数で渡します。
-4. **Python復元**: Python側で `osi3` ライブラリ（Google Protobuf）を用い、バイナリからPythonオブジェクトを生成します（`ParseFromString`）。
+1. **C++受信**: esminiからバイナリポインタ（BaseLo/BaseHi）とサイズ情報を受け取ります。
+2. **バリデーション**: ポインタの有効性を検証し、異常なサイズ（>100MB）でないかチェックします。
+3. **Pythonへ転送**: `pybind11` の `py::bytes` を用いて、ポインタから直接バイナリデータをコピーし、Pythonのメソッドに引数で渡します。
+4. **Python復元**: Python側で `osi3` ライブラリ（Google Protobuf）を用い、受け取ったバイナリを `ParseFromString` でデコードします。
 
 > [!TIP]
 > **なぜ二度パースするのか？**
@@ -43,20 +43,23 @@ C++のFMUラッパーは、`pybind11` を介してPythonインタプリタの生
 
 ### ライフサイクル管理
 
-1. **`Instantiate` (初期化)**:
-* `py::scoped_interpreter` を起動。
-* Embeddable Pythonのパス（`resources/python_env`）を `sys.path` に追加。
-* `logic.py` 内の `Controller` クラスをインスタンス化し、C++のメンバ変数 `py::object py_controller` に格納。
+1. **`Instantiate` (インスタンス化)**:
+* コントローラーオブジェクトのみを生成。FMI初期化シーケンスに従い、重量処理は行いません。
 
+2. **`EnterInitializationMode` (初期化開始時)**:
+* `py::scoped_interpreter` を起動（初回のみ）。
+* `resources` ディレクトリを `sys.path` に追加し、`logic.py` を検索可能にします。
+* `logic.py` 内の `Controller` クラスをインスタンス化し、`py::object` として保持。
 
-2. **`DoStep` (計算実行)**:
-* `py_controller.attr("update_control")(py::bytes(data))` を実行。
-* 戻り値の `list` を `std::vector<double>` にキャストし、FMUの出力ポートへセット。
+3. **`DoStep` (計算実行)**:
+* **GIL取得**: スレッド安全のため Python GIL を取得。
+* **データコピー**: `py::bytes` でOSIデータをコピー（不正ポインタ保護付き）。
+* **Python実行**: `update_control` を呼び出し、戻り値をFMU出力へセット。
 
-
-3. **`FreeInstance` (破棄)**:
-* Pythonオブジェクトの参照カウントを解放。
-* インタプリタの停止。
+4. **`FreeInstance` (破棄)**:
+* **GIL取得**: Pythonオブジェクト解放のため GIL を取得。
+* `m_pyController = py::none()` により参照を確実に解放。
+* インタプリタの停止（グローバルデストラクタによる）。
 
 
 
@@ -70,8 +73,8 @@ C++のFMUラッパーは、`pybind11` を介してPythonインタプリタの生
 
 FMUがどこに展開されても、C++ DLL（`binaries/win64/`）から見た相対パスで `resources/python_env` を特定します。
 
-* **`Py_SetPythonHome`**: Python本体の検索パスをFMU内の `resources/python_env` に固定。
-* **`pythonXX._pth`**: `import site` を有効化することで、`resources/python_env/Lib/site-packages` 内の外部ライブラリ（`numpy`, `osi-python`）を優先的に読み込みます。
+* **URI デコード**: `fmuResourceLocation` が URI エンコードされている場合（`%20` など）も正しくデコードして実パスを特定します。
+* **`pythonXX._pth`**: 標準ライブラリの検索パスをFMU内に固定。`_pth` ファイルを使用する場合、`Py_SetPythonHome` は使用せず、自動構成に任せます。
 
 ---
 
