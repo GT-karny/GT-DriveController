@@ -14,16 +14,17 @@ add_subdirectory(thirdparty/pybind11)
 include_directories(include include/fmi2)
 
 # Python Paths (Manual Override)
-set(PYTHON_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/python/Python-3.14.2/Python-3.14.2")
+# Python Paths (Manual Override)
+set(PYTHON_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/cpython")
 set(PYTHON_INCLUDE_DIRS 
     "${PYTHON_SOURCE_DIR}/Include" 
     "${PYTHON_SOURCE_DIR}/PC"
 )
 include_directories(${PYTHON_INCLUDE_DIRS})
 
-# Link against python314.lib AND python3.lib
+# Link against python312.lib AND python3.lib
 set(PYTHON_LIBRARY 
-    "${PYTHON_SOURCE_DIR}/PCbuild/amd64/python314.lib"
+    "${PYTHON_SOURCE_DIR}/PCbuild/amd64/python312.lib"
     "${PYTHON_SOURCE_DIR}/PCbuild/amd64/python3.lib"
 )
 
@@ -49,7 +50,8 @@ target_include_directories(test_fmu PRIVATE include include/fmi2)
 add_dependencies(test_fmu GT-DriveController)
 
 if(WIN32)
-    target_compile_definitions(GT-DriveController PRIVATE FMI2_FUNCTION_PREFIX=GT_DriveController_)
+    # FMI2_FUNCTION_PREFIX should NOT be defined for DLLs as per fmi2Functions.h
+    # target_compile_definitions(GT-DriveController PRIVATE FMI2_FUNCTION_PREFIX=GT_DriveController_)
     # Copy resources/python to build directory for convenience if needed, 
     # but the FMU structure creation is manual or separate step usually.
 endif()

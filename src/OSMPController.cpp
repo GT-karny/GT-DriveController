@@ -8,11 +8,12 @@ namespace fs = std::filesystem;
 // Global Python Interpreter Guard
 static std::unique_ptr<py::scoped_interpreter> g_interpreter;
 
-// initializePython must be called with the home path BEFORE initializing interpreter
+// initializePython - When using python312._pth file, do NOT call Py_SetPythonHome
+// The _pth file will automatically configure sys.path if it's in the same directory as python312.dll
 void OSMPController::GlobalInitializePython(const std::wstring& pythonHome) {
     if (!g_interpreter) {
-        // Set Python Home BEFORE initialization
-        Py_SetPythonHome(const_cast<wchar_t*>(pythonHome.c_str()));
+        // DO NOT set Python Home when using _pth file
+        // Py_SetPythonHome(const_cast<wchar_t*>(pythonHome.c_str()));
         
         // Initialize Interpreter
         g_interpreter = std::make_unique<py::scoped_interpreter>();
@@ -40,6 +41,9 @@ fmi2Status OSMPController::doInit() {
         fs::path resDir(m_resourcePath);
         fs::path pythonHome = resDir / "python";
         
+        std::cout << "[GT-DriveController] Resource path: " << m_resourcePath << std::endl;
+        std::cout << "[GT-DriveController] Python home: " << pythonHome.string() << std::endl;
+        
         // Ensure Interpreter is running (Pass Home Path)
         GlobalInitializePython(pythonHome.wstring());
 
@@ -52,11 +56,14 @@ fmi2Status OSMPController::doInit() {
         // Add resource path to sys.path to find 'logic.py'
         sys.attr("path").attr("append")(resDir.string());
         
+        std::cout << "[GT-DriveController] Importing logic module..." << std::endl;
         // 3. Import logic module
         py::module logic = py::module::import("logic");
         
         // 4. Instantiate Controller
         m_pyController = logic.attr("Controller")();
+        
+        std::cout << "[GT-DriveController] Python controller initialized successfully" << std::endl;
 
         return fmi2OK;
     }
