@@ -59,6 +59,36 @@ New-Item -ItemType Directory -Path $RES_DIR -Force | Out-Null
 # Copy logic.py
 Copy-Item -Path "$PROJECT_ROOT\resources\logic.py" -Destination $RES_DIR -ErrorAction SilentlyContinue
 
+# Copy OSI Python bindings (osi3 package)
+$OSI_SRC = "$PROJECT_ROOT\python\osi"
+$OSI_DST = "$RES_DIR\osi3"
+if (Test-Path $OSI_SRC) {
+    Write-Host "  - Packaging OSI3 bindings..."
+    Copy-Item -Path $OSI_SRC -Destination $OSI_DST -Recurse -Force
+    # Ensure __init__.py exists
+    if (-not (Test-Path "$OSI_DST\__init__.py")) {
+        New-Item -Path "$OSI_DST\__init__.py" -ItemType File -Force | Out-Null
+    }
+} else {
+    Write-Warning "OSI Python bindings not found at $OSI_SRC"
+}
+
+# Copy Google Protobuf Runtime
+$GOOGLE_SRC = "$PROJECT_ROOT\python\google"
+$GOOGLE_DST = "$RES_DIR\google"
+if (Test-Path $GOOGLE_SRC) {
+    Write-Host "  - Packaging Google Protobuf runtime..."
+    Copy-Item -Path $GOOGLE_SRC -Destination $GOOGLE_DST -Recurse -Force
+} else {
+    Write-Warning "Google Protobuf runtime not found at $GOOGLE_SRC"
+}
+
+$PROTO_INFO_SRC = "$PROJECT_ROOT\python\protobuf-*.dist-info"
+if (Test-Path $PROTO_INFO_SRC) {
+    Copy-Item -Path $PROTO_INFO_SRC -Destination $RES_DIR -Recurse -Force
+    Write-Host "  - Packaging Protobuf dist-info"
+}
+
 # Extension Modules
 $PYD_DIR = "$RES_DIR\python"
 New-Item -ItemType Directory -Path $PYD_DIR -Force | Out-Null

@@ -93,16 +93,34 @@ fmi2Status OSMPController::doInit() {
             return fmi2Error;
         }
 
-        // Add script's directory to sys.path using robust raw string injection
+        // --- Path Setup Strategy for OSI Support ---
+        // 1. Add 'resources' dir to sys.path -> allows 'import osi3'
+        // 2. Add 'resources/osi3' dir to sys.path -> allows flat imports found in generated files (e.g. 'import osi_common_pb2')
+        // 3. Add script's parent dir to sys.path -> allows importing the logic script itself
+
+        std::string resDirStr = resDir.string();
+        std::replace(resDirStr.begin(), resDirStr.end(), '\\', '/');
+
+        fs::path osi3Dir = resDir / "osi3";
+        std::string osi3DirStr = osi3Dir.string();
+        std::replace(osi3DirStr.begin(), osi3DirStr.end(), '\\', '/');
+
         std::string scriptParent = scriptPath.parent_path().string();
-        std::replace(scriptParent.begin(), scriptParent.end(), '\\', '/'); // Normalize
+        std::replace(scriptParent.begin(), scriptParent.end(), '\\', '/'); 
         
-        std::cout << "[GT-DriveController] Adding script parent to sys.path: " << scriptParent << std::endl;
-        
+        std::cout << "[GT-DriveController] Updating sys.path:" << std::endl;
+        std::cout << "  - Resources: " << resDirStr << std::endl;
+        std::cout << "  - OSI3:      " << osi3DirStr << std::endl;
+        std::cout << "  - Script:    " << scriptParent << std::endl;
+
         // Use PyRun_SimpleString with raw string literal to avoid any escape sequence issues
-        std::string cmd = "import sys; sys.path.insert(0, r'" + scriptParent + "')";
+        std::string cmd = "import sys\n";
+        cmd += "sys.path.insert(0, r'" + resDirStr + "')\n";
+        cmd += "sys.path.insert(0, r'" + osi3DirStr + "')\n";
+        cmd += "sys.path.insert(0, r'" + scriptParent + "')\n";
+        
         if (PyRun_SimpleString(cmd.c_str()) != 0) {
-            std::cerr << "[GT-DriveController] Error: Failed to add path to sys.path via PyRun_SimpleString" << std::endl;
+            std::cerr << "[GT-DriveController] Error: Failed to update sys.path" << std::endl;
         }
 
         // Import module (filename without .py)

@@ -1,8 +1,22 @@
 try:
+    import sys
+    import os
+    
+    # [Workaround] Add osi3 package directory to sys.path
+    # The generated protobuf files use flat imports (e.g. 'import osi_common_pb2')
+    # so their containing directory must be in sys.path.
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    osi3_path = os.path.join(current_dir, 'osi3')
+    if osi3_path not in sys.path:
+        sys.path.append(osi3_path)
+
     import osi3.osi_sensorview_pb2 as osi_sv
-except ImportError:
+    print("[GT-DriveController] OSI bindings imported successfully")
+except ImportError as e:
     # Fallback or error logging if osi3 not available in environment
-    print("[GT-DriveController] Error: Could not import osi3.osi_sensorview_pb2")
+    print(f"[GT-DriveController] Error: Could not import osi3.osi_sensorview_pb2: {e}")
+    # Print sys.path for debugging
+    print(f"[GT-DriveController] sys.path: {sys.path}")
     osi_sv = None
 
 class Controller:
