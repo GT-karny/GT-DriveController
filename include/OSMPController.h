@@ -84,7 +84,7 @@ private:
     fmi2Integer m_driveMode = 1; // Default: Forward
 
     // Parameters
-    std::string m_pythonScriptPath = "resources/logic.py";
+    std::string m_pythonScriptPath = "logic.py";
     std::string m_pythonDependencyPath = "";
 
     // Python Objects

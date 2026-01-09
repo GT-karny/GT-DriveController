@@ -61,6 +61,7 @@ FMI2_Export fmi2Status fmi2SetupExperiment(fmi2Component c,
 }
 
 FMI2_Export fmi2Status fmi2EnterInitializationMode(fmi2Component c) {
+    std::cout << "[GT-DriveController] fmi2EnterInitializationMode called" << std::endl;
     // Per FMI 2.0 spec, this is the proper place for heavy initialization
     // (Python interpreter, module loading, resource allocation)
     if (c) {

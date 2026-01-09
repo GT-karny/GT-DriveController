@@ -83,7 +83,7 @@
     <!-- Parameters (Strings) -->
     <!-- VR 11: PythonScriptPath -->
     <ScalarVariable name="PythonScriptPath" valueReference="11" causality="parameter" variability="fixed">
-      <String start="resources/logic.py" />
+      <String start="logic.py" />
     </ScalarVariable>
 
     <!-- VR 12: PythonDependencyPath -->

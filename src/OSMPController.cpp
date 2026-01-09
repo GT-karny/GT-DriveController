@@ -49,17 +49,24 @@ fmi2Status OSMPController::doInit() {
         return fmi2OK;
     }
 
+    std::cout << "[GT-DriveController] Enter doInit..." << std::endl;
+
     try {
         // Construct absolute path to resources
         fs::path resDir(m_resourcePath);
         fs::path pythonHome = resDir / "python";
         
         std::cout << "[GT-DriveController] Resource path: " << m_resourcePath << std::endl;
+        std::cout << "[GT-DriveController] Python Home expected at: " << pythonHome.string() << std::endl;
         
         // Ensure Interpreter is running
+        std::cout << "[GT-DriveController] Initializing Python Interpreter..." << std::endl;
         GlobalInitializePython(pythonHome.wstring());
+        std::cout << "[GT-DriveController] Python Interpreter Initialized." << std::endl;
 
+        std::cout << "[GT-DriveController] Importing sys module..." << std::endl;
         py::module sys = py::module::import("sys");
+        std::cout << "[GT-DriveController] sys module imported." << std::endl;
 
         // 1. Handle PythonDependencyPath
         if (!m_pythonDependencyPath.empty()) {
@@ -73,23 +80,46 @@ fmi2Status OSMPController::doInit() {
             scriptPath = resDir / scriptPath;
         }
 
-        std::cout << "[GT-DriveController] Using script: " << scriptPath.string() << std::endl;
+        // Normalize path separators to forward slashes for Python compatibility
+        std::string scriptPathStr = scriptPath.string();
+        std::replace(scriptPathStr.begin(), scriptPathStr.end(), '\\', '/');
+
+        std::cout << "[GT-DriveController] Using script: " << scriptPathStr << std::endl;
 
         if (!fs::exists(scriptPath)) {
-            std::cerr << "[GT-DriveController] Error: Script not found: " << scriptPath.string() << std::endl;
+            std::cerr << "[GT-DriveController] Error: Script not found: " << scriptPathStr << std::endl;
+            // Also print what we checked
+            std::cerr << "[GT-DriveController] (Checked path: " << scriptPath.string() << ")" << std::endl;
             return fmi2Error;
         }
 
-        // Add script's directory to sys.path (High priority)
-        sys.attr("path").attr("insert")(0, scriptPath.parent_path().string());
+        // Add script's directory to sys.path using robust raw string injection
+        std::string scriptParent = scriptPath.parent_path().string();
+        std::replace(scriptParent.begin(), scriptParent.end(), '\\', '/'); // Normalize
+        
+        std::cout << "[GT-DriveController] Adding script parent to sys.path: " << scriptParent << std::endl;
+        
+        // Use PyRun_SimpleString with raw string literal to avoid any escape sequence issues
+        std::string cmd = "import sys; sys.path.insert(0, r'" + scriptParent + "')";
+        if (PyRun_SimpleString(cmd.c_str()) != 0) {
+            std::cerr << "[GT-DriveController] Error: Failed to add path to sys.path via PyRun_SimpleString" << std::endl;
+        }
 
         // Import module (filename without .py)
         std::string moduleName = scriptPath.stem().string();
         std::cout << "[GT-DriveController] Importing module: " << moduleName << std::endl;
+        
+        // Print sys.path for verification
+        PyRun_SimpleString("print('[GT-DriveController] DEBUG sys.path:', sys.path)");
+
+        // Import using module name, NOT path
         py::module logic = py::module::import(moduleName.c_str());
+        std::cout << "[GT-DriveController] Module imported successfully." << std::endl;
         
         // Instantiate Controller
+        std::cout << "[GT-DriveController] Instantiating Python Controller class..." << std::endl;
         m_pyController = logic.attr("Controller")();
+        std::cout << "[GT-DriveController] Python Controller instantiated." << std::endl;
         
         m_pythonInitialized = true;
         std::cout << "[GT-DriveController] Python controller initialized successfully" << std::endl;
@@ -98,10 +128,19 @@ fmi2Status OSMPController::doInit() {
     }
     catch (py::error_already_set& e) {
         std::cerr << "[GT-DriveController] Python error in doInit: " << e.what() << std::endl;
+        // Print sys.path for debugging
+        try {
+             py::module sys = py::module::import("sys");
+             py::print("Current sys.path:", sys.attr("path"));
+        } catch(...) {}
         return fmi2Error;
     }
     catch (std::exception& e) {
         std::cerr << "[GT-DriveController] Error in doInit: " << e.what() << std::endl;
+        return fmi2Error;
+    }
+    catch (...) {
+        std::cerr << "[GT-DriveController] Unknown error in doInit" << std::endl;
         return fmi2Error;
     }
 }
@@ -237,8 +276,14 @@ fmi2Status OSMPController::getReal(const fmi2ValueReference vr[], size_t nvr, fm
 fmi2Status OSMPController::setString(const fmi2ValueReference vr[], size_t nvr, const fmi2String value[]) {
     for (size_t i = 0; i < nvr; ++i) {
         switch (vr[i]) {
-            case VR_PYTHON_SCRIPT_PATH: m_pythonScriptPath = value[i]; break;
-            case VR_PYTHON_DEP_PATH:    m_pythonDependencyPath = value[i]; break;
+            case VR_PYTHON_SCRIPT_PATH: 
+                std::cout << "[GT-DriveController] setString: PythonScriptPath overridden to: " << value[i] << std::endl;
+                m_pythonScriptPath = value[i]; 
+                break;
+            case VR_PYTHON_DEP_PATH:    
+                std::cout << "[GT-DriveController] setString: PythonDependencyPath overridden to: " << value[i] << std::endl;
+                m_pythonDependencyPath = value[i]; 
+                break;
             default: break;
         }
     }
