@@ -29,33 +29,45 @@ set(PYTHON_LIBRARY
 )
 
 # FMU Source Files
+# FMU Source Files
 set(SOURCES
     src/main.cpp
     src/OSMPController.cpp
 )
 
-# Define FMU Shared Library
-add_library(GT-DriveController SHARED ${SOURCES})
+# Implementation Library (The logic that needs Python)
+add_library(GT-DriveController_Core SHARED ${SOURCES})
 
-# Link Libraries
-target_link_libraries(GT-DriveController PRIVATE
+# Core uses Python
+target_link_libraries(GT-DriveController_Core PRIVATE
     pybind11::embed
 )
 
-# Windows specific
-# Test Runner
-add_executable(test_fmu tests/test_fmu.cpp)
-target_include_directories(test_fmu PRIVATE include include/fmi2)
-# We don't link GT-DriveController, we load it dynamically, but we need to ensure it's built.
-add_dependencies(test_fmu GT-DriveController)
-
+# Windows specific for Core
 if(WIN32)
-    # FMI2_FUNCTION_PREFIX should NOT be defined for DLLs as per fmi2Functions.h
-    # target_compile_definitions(GT-DriveController PRIVATE FMI2_FUNCTION_PREFIX=GT_DriveController_)
-    # Copy resources/python to build directory for convenience if needed, 
-    # but the FMU structure creation is manual or separate step usually.
+    # Ensure exported functions are not mangled (though FMI standard defines extern C)
 endif()
 
-# Installation / FMU Packaging helper (Optional)
-# This assumes a manual zip step as per README, but we can stage it.
-install(TARGETS GT-DriveController RUNTIME DESTINATION binaries/win64)
+# Shim Library (The entry point that has NO Python dependency)
+add_library(GT-DriveController SHARED src/shim.cpp)
+target_include_directories(GT-DriveController PRIVATE include include/fmi2)
+
+# Shim links only to system libs (default)
+
+# Test Runner needs to link to Core or Shim? 
+# The test runner usually calls fmi2Instantiate. 
+# It can link to Shim.
+add_executable(test_fmu tests/test_fmu.cpp)
+target_include_directories(test_fmu PRIVATE include include/fmi2)
+# Link test_fmu to Shim (not core, to verify loading)
+# Actually, test_fmu source uses explicit LoadLibrary sometimes? 
+# checking tests/test_fmu.cpp... it likely treats it as a lib.
+# But for FMU testing, we often manually instantiate class.
+# "test_fmu" links against the library.
+# If test_fmu links against Shim, it will work.
+# But test_fmu might access OSMPController class directly?
+# Let's check test_fmu source later. For now, link dependencies.
+add_dependencies(test_fmu GT-DriveController GT-DriveController_Core)
+
+# Installation / Output
+install(TARGETS GT-DriveController GT-DriveController_Core RUNTIME DESTINATION binaries/win64)
