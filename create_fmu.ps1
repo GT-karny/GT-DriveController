@@ -35,7 +35,7 @@ New-Item -ItemType Directory -Path $BIN_DIR -Force | Out-Null
 Write-Host "[3/6] Copying binary files..."
 
 # FMU DLLs
-Copy-Item -Path "$BUILD_DIR\GT-DriveController.dll" -Destination $BIN_DIR
+Copy-Item -Path "$BUILD_DIR\GT_DriveController.dll" -Destination $BIN_DIR
 Copy-Item -Path "$BUILD_DIR\GT-DriveController_Core.dll" -Destination $BIN_DIR
 
 # Python DLLs and Runtime

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <vector>
 #include <type_traits> // For std::remove_reference_t
+#include <cstdio>      // For fopen, fprintf
 
 #if defined _WIN32 || defined __CYGWIN__
   #define FMI2_Export __declspec(dllexport)
@@ -15,35 +16,74 @@
 
 namespace fs = std::filesystem;
 
+// Logging Helper
+// Logging Helper
+void Log(const std::string& msg) {
+    static std::string logPath = "";
+    if (logPath.empty()) {
+        HMODULE hShim = NULL;
+        // Use the address of Log itself to find the HMODULE
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&Log, &hShim)) {
+            char pathBuf[MAX_PATH];
+            if (GetModuleFileNameA(hShim, pathBuf, MAX_PATH) != 0) {
+                fs::path shimPath(pathBuf);
+                logPath = (shimPath.parent_path() / "GT-DriveController_Shim.log").string();
+            }
+        }
+        
+        // Fallback to temp if we somehow couldn't determine path
+        if (logPath.empty()) {
+            char tempPath[MAX_PATH];
+            GetTempPathA(MAX_PATH, tempPath);
+            logPath = std::string(tempPath) + "GT-DriveController_Shim.log";
+        }
+    }
+    
+    FILE* f = fopen(logPath.c_str(), "a");
+    if (f) {
+        fprintf(f, "[Shim] %s\n", msg.c_str());
+        fclose(f);
+    }
+}
+
+void LogError(const std::string& msg, DWORD errCode) {
+    char buf[256];
+    snprintf(buf, sizeof(buf), "%s (Error: %lu)", msg.c_str(), errCode);
+    Log(buf);
+}
+
+// DllMain - Entry point for the DLL
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+    if (fdwReason == DLL_PROCESS_ATTACH) {
+        // Log immediately upon tracking
+        // We cannot reliably predict path here if GetModuleFileName fails, but we try.
+        // Also note: Calling complex functions in DllMain is risky, but fopen is usually okay if CRT is initialized.
+        // We use a safe/simple logging path first: Temp dir.
+        
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        std::string logPath = std::string(tempPath) + "GT-DriveController_Shim_Boot.log";
+        
+        FILE* f = fopen(logPath.c_str(), "a");
+        if (f) {
+            fprintf(f, "[Shim:DllMain] PROCESS_ATTACH. DLL Base: %p\n", hinstDLL);
+            fclose(f);
+        }
+        
+        // Also try to log to our main log function if possible
+        try {
+             Log("DllMain: PROCESS_ATTACH");
+        } catch (...) {
+            // Ignore errors here
+        }
+    }
+    return TRUE;
+}
+
 // The actual implementation DLL name
 const wchar_t* CORE_DLL_NAME = L"GT-DriveController_Core.dll";
 
 // Function pointers for FMI2 functions
-// The fmi2FunctionTypes.h defines types like: typedef void (*fmi2FreeInstanceTYPE)(...);
-// These are ALREADY function pointer types. We don't need to add *.
-// Let's double check fmi2FunctionTypes.h content from previous step.
-// Line 169: typedef fmi2Component fmi2InstantiateTYPE(...)
-// Wait, fmi2InstantiateTYPE is defined as:
-// typedef fmi2Component fmi2InstantiateTYPE(fmi2String instanceName, ...);
-// It is a FUNCTION TYPE, not a pointer type?
-// Let's check line 154 of fmi2FunctionTypes.h:
-// "Define fmi2 function pointer types to simplify dynamic loading"
-// Line 161: typedef const char* fmi2GetTypesPlatformTYPE(void);
-// This looks like a function type, NOT a pointer. "typedef Ret Name(Args);"
-// If I want a pointer to this, I need "fmi2GetTypesPlatformTYPE*".
-//
-// BUT, wait.
-// Line 119: typedef void (*fmi2CallbackLogger) ...
-// The common types use (*Name).
-// The function types for FMI functions (Line 161+) seem to be function types.
-// "typedef const char* fmi2GetTypesPlatformTYPE(void);"
-// So `fmi2GetTypesPlatformTYPE* var;` is correct for a function pointer variable.
-//
-// My previous attempt in Step 90 used `*`.
-// The user says "name##TYPE が意図通りに展開されず".
-//
-// Let's define the struct with * explicit, as I did in Step 90.
-
 static struct FMI2Functions {
     fmi2InstantiateTYPE* fmi2Instantiate;
     fmi2FreeInstanceTYPE* fmi2FreeInstance;
@@ -98,8 +138,8 @@ static bool ResolveAll() {
     auto load = [&](auto& fp, const char* sym) -> bool {
         FARPROC p = GetProcAddress(g_hCore, sym);
         if (!p) {
-            // Optional: log warning
-            // std::cerr << "Missing symbol: " << sym << std::endl;
+            // Log missing symbol
+            Log(std::string("Missing symbol: ") + sym);
             fp = nullptr;
             return false;
         }
@@ -161,47 +201,79 @@ static bool ResolveAll() {
 
 static bool EnsureCoreLoaded() {
     if (g_hCore) return true;
+    
+    Log("EnsureCoreLoaded called");
 
     // 1. Get Path to this Shim DLL
     HMODULE hShim = NULL;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&EnsureCoreLoaded, &hShim)) {
+        LogError("GetModuleHandleExW failed", GetLastError());
         return false;
     }
     
     wchar_t pathBuf[MAX_PATH];
-    if (GetModuleFileNameW(hShim, pathBuf, MAX_PATH) == 0) return false;
+    if (GetModuleFileNameW(hShim, pathBuf, MAX_PATH) == 0) {
+        LogError("GetModuleFileNameW failed", GetLastError());
+        return false;
+    }
     
     fs::path shimPath(pathBuf);
     fs::path binDir = shimPath.parent_path();
     fs::path corePath = binDir / CORE_DLL_NAME;
+    
+    Log("Shim Path: " + shimPath.string());
+    Log("Bin Dir: " + binDir.string());
+    Log("Core Path: " + corePath.string());
 
     // 2. Set DLL Directory to include the bin directory (so Python dependencies in the same dir are found)
     wchar_t oldDir[MAX_PATH] = {0};
-    GetDllDirectoryW(MAX_PATH, oldDir);
-    SetDllDirectoryW(binDir.c_str());
+    if (GetDllDirectoryW(MAX_PATH, oldDir) == 0) {
+        // If fails, usually means not set.
+        oldDir[0] = 0;
+    }
+    {
+        std::wstring wOld(oldDir);
+        Log("Original DllDirectory: " + std::string(wOld.begin(), wOld.end()));
+    }
+
+    if (!SetDllDirectoryW(binDir.c_str())) {
+        LogError("SetDllDirectoryW failed", GetLastError());
+    } else {
+        Log("SetDllDirectoryW succeeded. New path: " + binDir.string());
+    }
 
     // 3. Load Core DLL
     // The core DLL (and its dependencies like Python) should now be loadable
+    Log("Attempting LoadLibraryW for Core DLL...");
     g_hCore = LoadLibraryW(corePath.c_str());
 
     // 4. Restore DLL Directory
     SetDllDirectoryW(oldDir[0] ? oldDir : NULL);
+    Log("Restored original DllDirectory");
 
     if (!g_hCore) {
+        LogError("LoadLibraryW for Core failed", GetLastError());
         // Fallback: try simple load
+        Log("Attempting fallback LoadLibraryW (name only)...");
         g_hCore = LoadLibraryW(CORE_DLL_NAME);
     }
 
     if (!g_hCore) {
+        LogError("Final failure to load core DLL", GetLastError());
         std::cerr << "[GT-Shim] Failed to load core DLL: " << corePath.string() << " Error: " << GetLastError() << std::endl;
         return false;
     }
+    
+    Log("Core DLL loaded successfully. Resolving symbols...");
 
     // 5. Resolve Symbols
     if (!ResolveAll()) {
+        Log("Warning: Some symbols were missing in Core DLL");
         std::cerr << "[GT-Shim] Warning: Some symbols were missing in Core DLL" << std::endl;
         // Depending on strictness, we might return false here. 
         // But FMU might still work if unused functions are missing.
+    } else {
+        Log("All symbols resolved.");
     }
 
     return true;
@@ -210,18 +282,21 @@ static bool EnsureCoreLoaded() {
 extern "C" {
 
 FMI2_Export const char* fmi2GetTypesPlatform() {
+    // Log("fmi2GetTypesPlatform called");
     if (!EnsureCoreLoaded()) return "default";
     if (g_funcs.fmi2GetTypesPlatform) return g_funcs.fmi2GetTypesPlatform();
     return "default";
 }
 
 FMI2_Export const char* fmi2GetVersion() {
+    Log("fmi2GetVersion called");
     if (!EnsureCoreLoaded()) return "2.0";
     if (g_funcs.fmi2GetVersion) return g_funcs.fmi2GetVersion();
     return "2.0";
 }
 
 FMI2_Export fmi2Component fmi2Instantiate(fmi2String instanceName, fmi2Type fmuType, fmi2String fmuGUID, fmi2String fmuResourceLocation, const fmi2CallbackFunctions* functions, fmi2Boolean visible, fmi2Boolean loggingOn) {
+    Log("fmi2Instantiate called");
     if (!EnsureCoreLoaded()) return NULL;
     if (g_funcs.fmi2Instantiate) return g_funcs.fmi2Instantiate(instanceName, fmuType, fmuGUID, fmuResourceLocation, functions, visible, loggingOn);
     return NULL;

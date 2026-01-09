@@ -52,6 +52,17 @@ endif()
 add_library(GT-DriveController SHARED src/shim.cpp)
 target_include_directories(GT-DriveController PRIVATE include include/fmi2)
 
+# Ensure output filename matches modelIdentifier (GT_DriveController.dll)
+set_target_properties(GT-DriveController PROPERTIES 
+    PREFIX ""
+    OUTPUT_NAME "GT_DriveController"
+)
+
+# Statically link Runtime for Shim to ensure it has NO dependencies
+if(MSVC)
+    set_property(TARGET GT-DriveController PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # Shim links only to system libs (default)
 
 # Test Runner needs to link to Core or Shim? 
